@@ -48,7 +48,7 @@ def load_expr_from_file(filename, sep='\t'):
 
 def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='auto', tree_method='RF', n_jobs=1,
            task_type='CPU', devices=None, verbose=False):
-    """'Computation of tree-based scores for all putative regulatory links.
+    """Computation of tree-based scores for all putative regulatory links.
 
     Parameters
     ----------
@@ -162,9 +162,9 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
 
     vim = VIM(n_genes, gene_names)
 
-    pool_input_data = [[gene_expr_data, i, input_genes_idx, tree_method, k, n_trees, task_type, devices, verbose]
-                       for i in range(n_genes)]
     if n_jobs > 1:
+        pool_input_data = [[gene_expr_data, i, input_genes_idx, tree_method, k, n_trees, task_type, devices, verbose]
+                           for i in range(n_genes)]
         pool = Pool(n_jobs)
         pool_output = pool.map(wr_GENIE3_single, pool_input_data)
         for (i, vi) in pool_output:
