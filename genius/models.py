@@ -1,5 +1,6 @@
 from sklearn.tree.tree import BaseDecisionTree
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor
+from sklearn.linear_model import Lasso, BayesianRidge
 import numpy as np
 from multiprocessing import Pool
 import time
@@ -16,38 +17,8 @@ if xgboost_spec is not None:
     xgboost = xgboost_spec.loader.load_module()
 
 
-def load_expr_from_file(filename, sep='\t'):
-    """Load expression experiments data from file
-
-    Parameters
-    ----------
-
-    filename: str
-        path to file with expression data.
-
-    sep: str, optional
-        separator used for in file.
-
-    Returns
-    -------
-
-        Two arrays, first is array with gene names, second is two-dimensional matrix with expression experiments data.
-    """
-
-    if not isinstance(filename, str):
-        raise ValueError("Filename must be a string.")
-    if not isinstance(sep, str):
-        raise ValueError("Separator must be a string.")
-
-    with open(filename) as f:
-        gene_names = np.array(f.readline().rstrip('\n').split(sep))
-        gene_data = np.array([list(map(float, x.rstrip('\n').split(sep))) for x in f.readlines()])
-    
-    return gene_names, gene_data
-
-
-def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='auto', tree_method='RF', n_jobs=1,
-           task_type='CPU', devices=None, verbose=False):
+def GENIE4(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='auto', method='RF', alpha=0.000001, 
+           n_jobs=1, task_type='CPU', devices=None, verbose=False):
     """Computation of tree-based scores for all putative regulatory links.
 
     Parameters
@@ -68,9 +39,10 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
         regulator.
         default: 'all'
 
-    tree_method: 'RF', 'ET', 'GB', 'XGB' or 'CB', optional
+    method: 'RF', 'ET', 'GB', 'XGB', 'CB', 'LS' or 'BR' optional
         Specifies which tree-based procedure is used: either Random Forest ('RF'), Extra-Trees ('ET'),
-        Gradient-Boosting('GB'), XGBoost('XGB') or CatBoost('CB')
+        Gradient-Boosting('GB'), XGBoost('XGB'), CatBoost('CB'), Linear Regression with Lasso regularization('LS') or
+        BayesianRidge('BR')
         default: 'RF'
 
     k: 'sqrt', 'auto', 'log2' or a positive integer, optional
@@ -81,6 +53,10 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
     n_trees: positive integer, optional
         Specifies the number of trees grown in an ensemble.
         default: 1000
+
+    alpha: positive float between 0. and 1.
+        Alpha value for lasso regularization. Default set for best AUC_ROC
+        default: 0.000001
 
     n_jobs: Positive integer
         Number of threads that will be started for tree learning
@@ -131,15 +107,15 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
             if not s_intersection:
                 raise ValueError('the genes must contain at least one candidate regulator')
 
-    if tree_method is not 'RF' and tree_method is not 'ET' and tree_method is not 'GB' and tree_method is not 'XGB' \
-            and tree_method is not 'CB':
-        raise ValueError('input argument tree_method must be "RF" (Random Forests) or "ET" (Extra-Trees) '
+    if method is not 'RF' and method is not 'ET' and method is not 'GB' and method is not 'XGB' \
+            and method is not 'CB' and method is not 'LS' and method is not 'BR':
+        raise ValueError('input argument method must be "RF" (Random Forests) or "ET" (Extra-Trees) '
                          'or "GB" (GradientBoosting)')
 
-    if tree_method is 'XGB' and xgboost_spec is None:
+    if method is 'XGB' and xgboost_spec is None:
         raise ImportError('failed to import XGBoost, check if it is installed')
 
-    if tree_method is 'CB' and catboost_spec is None:
+    if method is 'CB' and catboost_spec is None:
         raise ImportError('failed to import CatBoost, check if it is installed')
 
     if k is not 'auto' and k is not 'sqrt' and k is not 'log2' and \
@@ -153,7 +129,7 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
         raise ValueError('input argument n_jobs must be a strictly positive integer')
 
     if verbose:
-        print("\nStarting to train model ({}) with {} trees and {} jobs".format(tree_method, n_trees, n_jobs))
+        print("\nStarting to train model ({}) with {} trees and {} jobs".format(method, n_trees, n_jobs))
 
     if regulators is None:
         input_genes_idx = list(range(n_genes))
@@ -163,15 +139,16 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
     vim = VIM(n_genes, gene_names)
 
     if n_jobs > 1:
-        pool_input_data = [[gene_expr_data, i, input_genes_idx, tree_method, k, n_trees, task_type, devices, verbose]
+        pool_input_data = [[gene_expr_data, i, input_genes_idx, method, k, n_trees, alpha, task_type, devices, verbose]
                            for i in range(n_genes)]
         pool = Pool(n_jobs)
-        pool_output = pool.map(wr_GENIE3_single, pool_input_data)
+        pool_output = pool.map(wr_GENIE4_single, pool_input_data)
         for (i, vi) in pool_output:
             vim._mat[i, :] = vi
     else:
         for i in range(n_genes):
-            vi = GENIE3_single(gene_expr_data, i, input_genes_idx, tree_method, k, n_trees, task_type, devices, verbose)
+            vi = GENIE4_single(gene_expr_data, i, input_genes_idx, method, k, n_trees, alpha, task_type, devices, 
+                               verbose)
             vim._mat[i, :] = vi
 
     vim._mat = np.transpose(vim._mat)
@@ -182,11 +159,11 @@ def GENIE3(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='au
     return vim
 
 
-def wr_GENIE3_single(args):
-    return [args[1], GENIE3_single(*args)]
+def wr_GENIE4_single(args):
+    return [args[1], GENIE4_single(*args)]
 
 
-def GENIE3_single(gene_expr_data, output_idx, input_idx, tree_method, k, n_trees, task_type, devices, verbose):
+def GENIE4_single(gene_expr_data, output_idx, input_idx, method, k, n_trees, alpha, task_type, devices, verbose):
     if verbose:
         print("Computing gene {}/{}...".format(output_idx + 1, gene_expr_data.shape[1]))
 
@@ -205,16 +182,20 @@ def GENIE3_single(gene_expr_data, output_idx, input_idx, tree_method, k, n_trees
     # Take slice for input data
     gene_expr_data_input = gene_expr_data[:, input_idx]
 
-    if tree_method == 'RF':
+    if method == 'RF':
         estimator = RandomForestRegressor(n_estimators=n_trees, max_features=k)
-    elif tree_method == 'ET':
+    elif method == 'ET':
         estimator = ExtraTreesRegressor(n_estimators=n_trees, max_features=k)
-    elif tree_method == 'GB':
+    elif method == 'GB':
         estimator = GradientBoostingRegressor(n_estimators=n_trees, max_features=k)
-    elif tree_method == 'CB':
+    elif method == 'CB':
         estimator = catboost.CatBoostRegressor(n_estimators=n_trees, silent=True, task_type=task_type, devices=devices)
-    elif tree_method == 'XGB':
+    elif method == 'XGB':
         estimator = xgboost.XGBRegressor(n_estimators=n_trees, silent=True)
+    elif method == 'LS':
+        estimator = Lasso(alpha=alpha)
+    elif method == 'BR':
+        estimator = BayesianRidge()
 
     # Train tree ensemble
     estimator.fit(gene_expr_data_input, gene_expr_data_output)
@@ -236,6 +217,10 @@ def compute_feature_importances(estimator):
         return estimator.feature_importances_ / np.sum(estimator.feature_importances_)
     elif xgboost_spec is not None and isinstance(estimator, xgboost.XGBRegressor):
         return estimator.feature_importances_
+    elif isinstance(estimator, Lasso):
+        return estimator.coef_ / sum(estimator.coef_) if np.sum(np.abs(estimator.coef_)) else estimator.coef_
+    elif isinstance(estimator, BayesianRidge):
+        return estimator.coef_
     else:
         importance_arr = np.asarray([e.tree_.compute_feature_importances(normalize=False)
                        for e in estimator.estimators_])
