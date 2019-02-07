@@ -3,6 +3,19 @@ import xml.dom.minidom as md
 
 
 def xml_graph_to_adjacency_matrix(filename):
+    """Load graph from SynTReN generated .xml file
+
+    Parameters
+    ----------
+    filename: str
+        path to xml file with graph
+
+    Returns
+    -------
+
+        Two wo-dimensional matrix with graph adjacency
+    """
+
     dom = md.parse(filename)
 
     nodes = dom.getElementsByTagName("Node")
