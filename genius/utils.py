@@ -58,3 +58,23 @@ def load_expr_from_file(filename, sep='\t'):
         gene_data = np.array([list(map(float, x.rstrip('\n').split(sep))) for x in f.readlines()])
 
     return gene_names, gene_data
+
+
+def matrix_stringify(m):
+    """Transform top-triangle matrix to one-dimensional array
+
+    Parameters
+    ----------
+
+    m: np.ndarray
+        two-dimensional matrix to transform
+
+    Returns
+    -------
+
+        one-dimensional np.array
+    """
+    arr = np.array([])
+    for i in range(m.shape[0] - 1):
+        arr = np.concatenate([arr, m[i, i+1:]])
+    return arr
