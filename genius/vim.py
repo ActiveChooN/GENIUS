@@ -26,7 +26,7 @@ class VIM(object):
         self._names = names
 
     def save_csv(self, filename):
-        with open(os.path.join(os.getcwd(), filename), 'w') as f:
+        with open(os.path.join(os.getcwd(), filename), 'w', newline='') as f:
             wr = csv.writer(f)
             wr.writerow([""] + self._names)
             for i in range(self._size):

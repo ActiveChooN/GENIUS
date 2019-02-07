@@ -1,1 +1,1 @@
-from ._models import GENIE3E, GLasso
+from ._models import GENIE3E, GLasso, combine_methods_weighted, combine_methods_avg
