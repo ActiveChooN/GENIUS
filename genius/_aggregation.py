@@ -319,8 +319,9 @@ def compute_with_subsampling(gene_expr_data, gene_names=None, regulators=None, r
             predicted_classes = km.predict(col.reshape(-1, 1))
             strong_idx = [x for x, cl in enumerate(predicted_classes) if cl == 1]
             strong_prob = [(i, col[i]) for i in strong_idx]
-        input_params.append([gene_expr_data, idx, [x[0] for x in strong_prob], second_method, k, n_trees, alpha,
-                             task_type, devices, verbose])
+        if strong_prob:
+            input_params.append([gene_expr_data, idx, [x[0] for x in strong_prob], second_method, k, n_trees, alpha,
+                                 task_type, devices, verbose])
 
     if n_jobs > 1:
         pool = Pool(n_jobs)
@@ -336,3 +337,63 @@ def compute_with_subsampling(gene_expr_data, gene_names=None, regulators=None, r
         print("Total elapsed time: {:.2f} s.".format(time.time() - start_time))
 
     return vim
+
+
+def compute_simple_aggregated_vim(vim_list, coefs=None):
+    """Compute rank aggregated score of different VIM.
+
+    Parameters
+    ----------
+
+    vim_list: list iof VIM
+        list containing few vims to aggregate
+
+    coefs: np.ndarray
+        list with float coefficients of aggregation
+        default: np.ones(len(vim_list))
+    Returns
+    -------
+        aggregated vim
+    """
+
+    if not isinstance(vim_list, list):
+        raise ValueError('vim_list must be a list of VIMs')
+
+    if not vim_list:
+        raise ValueError('vim_list must contain at least one element')
+
+    for vim in vim_list:
+        if not isinstance(vim, VIM):
+            raise ValueError('All elements of vim_list must be a VIM object')
+
+    if not (isinstance(coefs, np.ndarray) or coefs is None):
+        raise ValueError('coefs must be list object')
+
+    if coefs is not None and len(coefs) != len(vim_list):
+        raise ValueError('vim_list and coefs must be arrays of the same size')
+
+    # filling coefs array if none
+    if coefs is None:
+        coefs = np.ones(shape=len(vim_list))
+
+    # computing vertex rank
+    for vim in vim_list:
+        for row_idx in range(vim._mat.shape[0]):
+            temp = vim._mat[row_idx].argsort()
+            ranks = np.empty_like(temp)
+            ranks[temp] = np.arange(vim._mat.shape[1])
+            vim._mat[row_idx] = ranks
+
+    result_vim = VIM(vim_list[0]._mat.shape[0], vim_list[0].get_names())
+
+    # filling output matrix
+    for idx in range(vim_list[0]._mat.shape[0]):
+        for vim_idx, vim in enumerate(vim_list):
+            result_vim._mat[idx] += vim._mat[idx] * coefs[vim_idx   ]
+        result_vim._mat[idx] /= len(vim_list)
+
+    # normalizing output matrix
+    for row in result_vim._mat:
+        row /= np.sum(row)
+
+    return result_vim

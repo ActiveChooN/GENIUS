@@ -66,6 +66,9 @@ class VIM(object):
     def get_probabilities_matrix(self):
         return self._mat
 
+    def get_names(self):
+        return self._names
+
     @staticmethod
     def load_from_file(filename, sep=',', exclude_first_col=False):
         with open(os.path.join(os.getcwd(), filename), 'r') as f:

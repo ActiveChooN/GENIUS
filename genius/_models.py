@@ -134,7 +134,7 @@ def GENIE3E(gene_expr_data, gene_names=None, regulators=None, n_trees=1000, k='a
         n_jobs = 1
 
     if verbose:
-        print("\nStarting to train model ({}) with {} trees and {} jobs".format(method, n_trees, n_jobs))
+        print("Starting to train model ({}) with {} trees and {} jobs".format(method, n_trees, n_jobs))
 
     if regulators is None:
         input_genes_idx = list(range(n_genes))
